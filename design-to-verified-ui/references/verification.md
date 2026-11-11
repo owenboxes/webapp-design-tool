@@ -10,7 +10,7 @@ SKILL.md 3단계. 원칙: **실제로 띄워서, 두 폭에서, 모든 상태를
 - 폭: **390px**(모바일, 먼저)과 **1440px**(데스크톱).
 
 ## 2. 검사 항목
-ID V01~V22는 collab/notes/04, **V23~V27은 이 문서에서 새로 붙인 번호**다 (V23 터치 영역, V24 콘솔·요청 오류, V25 하단 행동 수, V26 진행 표시, V27 예정 상태와 취소).
+ID V01~V22는 collab/notes/04, **V23~V28은 이 문서에서 새로 붙인 번호**다 (V23 터치 영역, V24 콘솔·요청 오류, V25 하단 행동 수, V26 진행 표시, V27 예정 상태와 취소, V28 글자·간격 단계).
 
 | ID | 검사 | 방식 | 방법 / 기준 |
 |---|---|---|---|
@@ -18,6 +18,7 @@ ID V01~V22는 collab/notes/04, **V23~V27은 이 문서에서 새로 붙인 번�
 | V08 | 두 폭의 핵심 정보 동일 | 자동+수동 | 핵심 조건 텍스트를 두 폭에서 추출해 비교 + 캡처 확인 |
 | V14 | 텍스트 대비 | 자동 | 계산된 전경/배경 색으로 4.5:1(큰 글자 3:1). 투명·그라데이션·이미지 배경은 수동(V19) |
 | V23 | 터치 영역 | 자동 | 대화형 요소 bounding box ≥ 24×24px |
+| V28 | 글자·간격 단계 | 자동 측정·선택적 판정 | 기본은 measured로 기록. enforceScale:true일 때 모바일·PC 단계 합집합 밖(±0.5px) 또는 11px 미만 글자를 실패 처리. 폭별 활성 단계 밖 값은 진단으로 기록. 간격은 아래 §2-3 기준으로 분류하고 기록 |
 | V24 | 콘솔·요청 오류 | 자동 | console error, pageerror, requestfailed = 0. **HTTP 4xx/5xx는 requestfailed로 잡히지 않으니** 응답 상태 코드를 따로 확인 |
 | V06 | 상태 화면 | 자동+수동 | 로딩·오류·빈 상태 표시, 오류/빈 상태에서 복귀 동작, 로딩 중 주요 버튼 없음 |
 | V18 | 되돌리기 | 자동 | 다음 → 이전 시 선택 유지, 흐름 닫기로 시작 화면 복귀, "선택 취소"·불필요한 "건너뛰기" 없음 |
@@ -38,10 +39,10 @@ ID V01~V22는 collab/notes/04, **V23~V27은 이 문서에서 새로 붙인 번�
 - 하단 행동·진행 표시·현재 위치는 DOM 구조로 의미를 추측하지 말고, 설계 문서에 적은 선택자·기대값으로 검사한다.
 
 ## 2-1. 참고 구현의 실제 범위
-2026-11-10 기준. 공용 측정은 `skill/scripts/ui-checks.cjs`(V08·V14·V23·V24), 앱 시나리오(V25~V27 등)는 `examples/philosophy-v0/verification/verify.cjs`. 근거: collab/notes/12·13. 이 표를 넘어선 범위를 "검증됨"으로 쓰지 않는다.
+2026-11-11 기준. 공용 측정은 `skill/scripts/ui-checks.cjs`(V08·V14·V23·V24·V28), 앱 시나리오(V25~V27 등)는 `examples/philosophy-v0/verification/verify.cjs`. 근거: collab/notes/12·13·22. 이 표를 넘어선 범위를 "검증됨"으로 쓰지 않는다.
 
 **공용 모듈 사용법(요약)**: 실행부가 서버와 브라우저를 띄우고 열린 Playwright `page`를 넘긴다.
-`observePage(page)`로 이벤트 감시를 시작 → 화면마다 `measurePage(page, {screen, state, selectors:{root, controls, text}})` → 끝에 `observer.results()` 와 `dispose()`. 결과마다 id·화면·폭·상태·기대값·실측값·판정(pass/fail/skipped/unsupported)·한계가 붙는다. 실행부는 pass가 아닌 결과를 모두 실패로 처리한다. 모듈 자체 테스트: `examples/philosophy-v0/verification/ui-checks.test.cjs` + `fixtures/ui-checks.html`(2026-11-11 기존 15개에 숨긴 문서 넘침·가로 스크롤 목록 2개 추가, 17/17 통과). V08 판정은 `checks`의 `key === 'overflow'`를 사용한다. 원시 `contentWidth`만 비교하면 요소 검사가 빠진다. 요소 진단은 `overflowElements`와 V08의 `actual.elements`에 있다.
+`observePage(page)`로 이벤트 감시를 시작 → 화면마다 `measurePage(page, {screen, state, selectors:{root, controls, text}})` → 끝에 `observer.results()` 와 `dispose()`. 결과마다 id·화면·폭·상태·기대값·실측값·판정(pass/fail/skipped/unsupported)·한계가 붙는다. 실행부는 `checks`의 pass가 아닌 결과를 모두 실패로 처리한다. 모듈 자체 테스트: `examples/philosophy-v0/verification/ui-checks.test.cjs` + `fixtures/ui-checks.html`(2026-11-11 기존 17개 + V28 9개, 26/26 통과). V08 판정은 `checks`의 `key === 'overflow'`를 사용한다. 원시 `contentWidth`만 비교하면 요소 검사가 빠진다. 요소 진단은 `overflowElements`와 V08의 `actual.elements`에 있다. V28의 기록 전용 결과는 별도 `measurements`에 있으며 §2-3을 따른다.
 
 | 항목 | 상태 | 실제 범위 |
 |---|---|---|
@@ -77,6 +78,31 @@ ID V01~V22는 collab/notes/04, **V23~V27은 이 문서에서 새로 붙인 번�
 - **감시를 구현하지 못했으면 `observePage`를 부르지 말고 V24를 "지원 불가"로 적는다.** on/off를 빈 함수로 채우면 오류 0건이 통과로 잘못 기록된다.
 - 측정·감시가 호환된다고 클릭·다운로드·권한·입력 같은 시나리오 실행까지 호환되는 것은 아니다. 시나리오는 따로 구현하고 범위를 적는다.
 - 참고 사례: `examples/skill-trial/claude/run2/verification/cdp.cjs`(시험 결과물, 범용 코드 아님 — 취소 요청 처리, 응답 타임아웃, 프로필 삭제 범위, 고정 브라우저 경로를 다듬지 않았다). 공용 CDP 어댑터는 반복 수요가 확인되면 같은 fixture를 두 방식으로 돌려 결과가 같은지 확인한 뒤 `skill/scripts/`에 올린다.
+
+## 2-3. V28 글자·간격 단계
+
+2026-11-11 구현. 검증 결과의 `typeScale`·`spacing`에 측정값을 제공한다. 기본 V28 레코드는 `measurements`에 `measured`로 기록한다. measured는 기록 전용이며 통과 개수에 더하지 않는다. 기존 호출자의 `checks.every(x=>x.result==='pass')`는 계속 사용할 수 있다.
+
+- `measurePage(page, {enforceScale:true})`는 글자 V28 레코드(`key:'type-scale'`)를 `checks`에도 넣는다. 11px 미만 또는 모바일·PC 단계 합집합 밖 글자가 하나라도 있으면 fail, 텍스트 대상이 0개면 skipped다. 폭별 활성 단계 밖 값은 진단용 기록이며 이 판정에는 쓰지 않는다. 간격은 이 옵션에서도 measured다.
+- 집계 범위는 문서 전체의 렌더된 요소다. 화면 아래쪽 본문도 포함한다. display/visibility·opacity로 숨긴 요소, 크기 0인 요소, 0 크기 clip·inset(50%) 처리된 요소, absolute/fixed로 화면 위·좌우 밖에 숨긴 요소와 그 자손은 제외한다. 숨긴 건너뛰기 링크는 포커스 뒤 다시 잰다. 복잡한 마스크·가림은 별도 확인한다.
+- 글자는 공백 이외의 직접 텍스트 노드가 있는 요소의 computed font-size를 요소당 한 번 센다. 입력값·placeholder·의사 요소·이미지 속 글자는 포함하지 않는다. 텍스트의 본문/보조 역할과 로고 예외는 자동 판단하지 않는다.
+- 활성 글자 단계는 뷰포트 <768px일 때 11·12·13·15·16·18·22·28px, 768px 이상은 11·12·14·16·20·26·32px다. ±0.5px를 허용한다. 11px 미만 집계는 허용 오차와 별개로 엄격히 <11px다.
+- 강제 판정 허용 합집합은 11·12·13·14·15·16·18·20·22·26·28·32px다. 예를 들어 PC의13px는 활성 단계 밖 진단에 남지만 합집합 안이므로 통과하고,17px는 실패한다.
+- `typeScale.sizes`는 값별 개수, `outOfScale`은 활성 단계 밖, `unionOutOfScale`은 두 단계 합집합 밖 값이다. `below11Count`·`below11`도 기록한다. 그룹마다 value·count·중복 없는 examples 선택자 최대 3개를 제공한다.
+- 간격은 margin/padding 4면과 row-gap/column-gap을 요소·속성별로 센다. gap 단축 속성은 두 축으로 펼쳐 세며 별도로 중복 집계하지 않는다. `spacing.sizes`는 0 이외의 computed px 값, `outOfScale`은 아래 제외 항목을 뺀 단계 밖 값이다. 각 그룹의 properties에 속성별 개수도 남긴다.
+
+| 간격 값 | 처리 |
+|---|---|
+| 4·8·12·16·20·24·32·40·48·56·64·80px | 명시된 단계 목록으로 취급. 모든 4의 배수로 확대 해석하지 않음. 48·64는 2026-11-11 후속 결정으로 추가 |
+| auto·%·%가 들어간 calc | CSS Typed OM이 지원되면 relative로 분리. computed px 값은 sizes에도 보존 |
+| 양수 1·2px | adjustments로 분리 |
+| 음수 | 위치·겹침 보정 후보인 negative로 분리 |
+| 양수 소수 | 정수와 차이 >0.01px면 fractional로 분리. 0.01px 이하는 계산 오차로 보고 가까운 정수 단계와 비교 |
+| normal 등 px가 아닌 computed 값 | nonPixel로 분리 |
+
+원래의 em/rem 단위는 computed 값에서 복원하지 않는다. 정수로 계산된 em/rem은 일반 px와 함께 검사하고, 소수는 fractional로 기록한다. 직접 지정한 소수 px도 이 분류로 들어가므로 간격 오탐을 줄이는 대신 일부 위반을 놓칠 수 있다. `spacing.relativeSourceSupported`가 false이면 auto가 사용된 px 값으로만 보여 상대 여백을 오탐할 수 있다.
+
+검사기 자체 테스트는 `examples/philosophy-v0/`에서 `npm.cmd test`로 실행하며, 기존 17개와 V28 9개를 합해 **26개 통과**를 확인했다. 세 예제의 대표 화면 12조합 결과·CSS 근거·후속 결정은 `collab/notes/22-v28-scale-check.md`와 `22-evidence/`에 있다. 2026-11-11 후속 결정은 글자 합집합 수치 기준을 [확정]으로, 간격은 [측정]으로 유지한다.
 
 ## 3. 검사기 자체를 믿기 전에
 - 일부러 결함을 넣어 실패하는지 본다: 고정 폭 요소(넘침), 핸들러 없는 버튼(무반응), 끝나지 않는 로딩, 낮은 대비 글자. 단, **그 결함에 대응하는 검사가 있을 때만** 의미가 있다. 검사가 없는 결함은 "미구현"으로 적는다.

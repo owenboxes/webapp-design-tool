@@ -2,20 +2,21 @@
 
 // 브라우저 실행·서버·앱 시나리오는 호출자가 관리한다. 외부 의존성 없음.
 const record = (context, id, expected, actual, result, limitations = []) => ({
-  id: ({overflow:'V08','text-contrast':'V14','control-size':'V23','console-errors':'V24','page-errors':'V24','request-failures':'V24','http-errors':'V24'})[id] ?? 'configuration',
+  id: ({overflow:'V08','text-contrast':'V14','control-size':'V23','console-errors':'V24','page-errors':'V24','request-failures':'V24','http-errors':'V24','type-scale':'V28','spacing-scale':'V28'})[id] ?? 'configuration',
   key: id, screen: context.screen ?? 'unspecified', width: context.width ?? null,
   state: context.state ?? 'normal', expected, actual, result, limitations
 });
 
 /**
- * options: {screen, state, selectors:{root, controls, text}, minTarget?:24}
+ * options: {screen, state, selectors:{root, controls, text}, minTarget?:24, enforceScale?:false}
  * CSS 선택자는 문서 전체에서 조회한다. root는 스타일 조합 측정의 범위이다.
  * 반환값: checks(판정 레코드) + 원시 레이아웃/컨트롤/대비 측정값.
  * skipped/unsupported는 pass와 다르며, 호출자가 재검토 정책을 정한다.
  */
 async function measurePage(page, options = {}) {
-  const { selectors = {}, minTarget = 24 } = options;
+  const { selectors = {}, minTarget = 24, enforceScale = false } = options;
   if (!Number.isFinite(minTarget) || minTarget <= 0) throw new TypeError('minTarget must be positive');
+  if (typeof enforceScale !== 'boolean') throw new TypeError('enforceScale must be boolean');
   const metrics = await page.evaluate(({ selectors, minTarget }) => {
     const visible = el => el.getClientRects().length > 0 && !['hidden','collapse'].includes(getComputedStyle(el).visibility);
     const select = selector => {
@@ -99,8 +100,83 @@ async function measurePage(page, options = {}) {
       }
       return {label:el.getAttribute('aria-label')||el.textContent.trim()||el.name,width:rect.width,height:rect.height,measurement,reason};
     });
+    const mobileSizes=[11,12,13,15,16,18,22,28], desktopSizes=[11,12,14,16,20,26,32];
+    const allowedSizes=innerWidth<768 ? mobileSizes : desktopSizes;
+    const unionSizes=[...new Set([...mobileSizes,...desktopSizes])].sort((a,b)=>a-b);
+    const spacingSteps=[4,8,12,16,20,24,32,40,48,56,64,80];
+    const inScale=(value,steps)=>steps.some(step=>Math.abs(value-step)<=0.500001);
+    const summarize = entries => {
+      const groups=new Map();
+      for(const entry of entries) {
+        if(!groups.has(entry.value)) groups.set(entry.value,{value:entry.value,count:0,examples:[],properties:{}});
+        const group=groups.get(entry.value);
+        group.count++;
+        if(group.examples.length<3 && !group.examples.includes(entry.selector)) group.examples.push(entry.selector);
+        if(entry.property) group.properties[entry.property]=(group.properties[entry.property] || 0)+1;
+      }
+      return [...groups.values()].sort((a,b)=>typeof a.value==='number' ? a.value-b.value : a.value.localeCompare(b.value));
+    };
+    const typeValues=[], spacingValues=[], spacingOutside=[], adjustments=[], fractional=[], relative=[], negative=[], nonPixel=[];
+    const spacingProperties=['margin-top','margin-right','margin-bottom','margin-left','padding-top','padding-right','padding-bottom','padding-left','row-gap','column-gap'];
+    for(const el of document.querySelectorAll('body, body *')) {
+      if(!visible(el)) continue;
+      const rect=el.getBoundingClientRect();
+      if(rect.width<=0 || rect.height<=0) continue;
+      let hidden=false;
+      for(let node=el;node;node=node.parentElement) {
+        const style=getComputedStyle(node);
+        if(Number(style.opacity)===0 || style.clip==='rect(0px, 0px, 0px, 0px)' || style.clipPath==='inset(50%)') {
+          hidden=true;break;
+        }
+        if(['absolute','fixed'].includes(style.position)) {
+          const bounds=node.getBoundingClientRect();
+          if(bounds.bottom<=0 || bounds.right<=0 || bounds.left>=innerWidth) {hidden=true;break;}
+        }
+      }
+      if(hidden) continue;
+      const style=getComputedStyle(el), selector=elementSelector(el);
+      const hasText=[...el.childNodes].some(node=>node.nodeType===Node.TEXT_NODE && node.textContent.trim());
+      const size=parseFloat(style.fontSize), color=rgb(style.color);
+      if(hasText && size>0 && (!color || color[3]>0)) typeValues.push({value:size,selector});
+      const typedStyle=typeof el.computedStyleMap==='function' ? el.computedStyleMap() : null;
+      for(const property of spacingProperties) {
+        const computed=style.getPropertyValue(property);
+        const typed=typedStyle?.get(property)?.toString() ?? computed;
+        const value=/^-?[\d.]+px$/.test(computed) ? parseFloat(computed) : null;
+        const entry={value,selector,property};
+        if(value!==null && Math.abs(value)<0.000001) continue;
+        if(value!==null) spacingValues.push(entry);
+        if(typed.includes('%') || typed==='auto') {
+          relative.push({...entry,value:typed});continue;
+        }
+        if(value===null) {
+          nonPixel.push({...entry,value:computed});continue;
+        }
+        if(value<0) {negative.push(entry);continue;}
+        const rounded=Math.round(value);
+        if(Math.abs(value-rounded)>0.01) {fractional.push(entry);continue;}
+        if(rounded===1 || rounded===2) {adjustments.push(entry);continue;}
+        if(!spacingSteps.includes(rounded)) spacingOutside.push(entry);
+      }
+    }
+    const typeScale={
+      result:'measured',viewport:innerWidth<768?'mobile':'desktop',
+      allowed:allowedSizes,unionAllowed:unionSizes,tolerance:0.5,count:typeValues.length,
+      sizes:summarize(typeValues),
+      outOfScale:summarize(typeValues.filter(entry=>!inScale(entry.value,allowedSizes))),
+      unionOutOfScale:summarize(typeValues.filter(entry=>!inScale(entry.value,unionSizes))),
+      below11Count:typeValues.filter(entry=>entry.value<11).length,
+      below11:summarize(typeValues.filter(entry=>entry.value<11))
+    };
+    const spacing={
+      result:'measured',allowed:spacingSteps,count:spacingValues.length,
+      sizes:summarize(spacingValues),outOfScale:summarize(spacingOutside),
+      adjustments:summarize(adjustments),fractional:summarize(fractional),
+      relative:summarize(relative),negative:summarize(negative),nonPixel:summarize(nonPixel),
+      relativeSourceSupported:typeof document.body.computedStyleMap==='function'
+    };
     return {
-      pageWidth:innerWidth,contentWidth:document.documentElement.scrollWidth,overflowElements,
+      pageWidth:innerWidth,contentWidth:document.documentElement.scrollWidth,overflowElements,typeScale,spacing,
       heading:document.querySelector('h1')?.textContent ?? '',
       textStyles:[...new Set(root.elements.flatMap(root=>[...root.querySelectorAll('*')].filter(visible).map(el=>{const s=getComputedStyle(el);return [s.fontFamily,s.fontSize,s.fontWeight,s.lineHeight].join('|');})))],
       controls:controlSizes,below24:controlSizes.filter(x=>x.measurement!=='unsupported' && (x.width<minTarget || x.height<minTarget)),
@@ -119,6 +195,14 @@ async function measurePage(page, options = {}) {
     record(context,'control-size',`선택 컨트롤 >= ${minTarget}×${minTarget}px`,{count:controls.count,violations:metrics.below24,unsupported:metrics.unsupportedControls,labelMeasurements:metrics.controls.filter(x=>x.measurement==='label')},controlResult,['사각형만 측정, 간격·문장 안 링크 예외·겹침·실제 클릭 영역은 미평가',metrics.controls.some(x=>x.measurement==='label')?'숨긴 입력은 연결 label 중 가장 큰 사각형 영역으로 측정':'',controls.reason].filter(Boolean)),
     record(context,'text-contrast','일반 글자 >=4.5:1, 큰 글자 >=3:1',{count:text.count,violations:metrics.contrastFailures,unsupported:metrics.unsupportedContrast},contrastResult,['흰 캔버스 위 일반 sRGB 합성만 지원, 가림·의사 요소·SVG는 별도 확인',text.reason].filter(Boolean))
   ];
+  const typeResult=!enforceScale ? 'measured' : !metrics.typeScale.count ? 'skipped' :
+    metrics.typeScale.below11Count || metrics.typeScale.unionOutOfScale.length ? 'fail' : 'pass';
+  metrics.typeScale.result=typeResult;
+  metrics.measurements=[
+    record(context,'type-scale','모바일·PC 글자 단계 합집합 ±0.5px, 11px 미만 없음',metrics.typeScale,typeResult,['폭별 활성 단계 밖 값은 진단으로만 기록','직접 텍스트 노드가 있는 보이는 요소만 집계, 입력값·placeholder·의사 요소·텍스트 역할·부분 가림은 별도 확인']),
+    record(context,'spacing-scale','간격 단계 기록',metrics.spacing,'measured',['요소·속성별 개수, gap은 row-gap/column-gap으로 정규화','auto·%는 Typed OM 지원 시 분리, 원래 em/rem 단위는 복원하지 않음','음수·1/2px 보정·소수는 별도 기록, 간격은 강제 판정하지 않음'])
+  ];
+  if(enforceScale) metrics.checks.push(metrics.measurements[0]);
   return metrics;
 }
 
